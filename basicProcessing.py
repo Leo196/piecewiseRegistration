@@ -16,44 +16,7 @@ import cv2
 from visiualization import niisave
 import skimage
 import scipy
-
-
-def norm(image):
-    """MR-Lightsheet normalization"""
-    
-    image = (image - np.min(image)) / (np.max(image) - np.min(image))
-    
-    return image
-
-def norm255(image):
-    """~->[0,255] for overlay visiualization"""
-    
-    ymax=255
-    ymin=0
-    xmax = np.max(image) #求得InImg中的最大值
-    xmin = np.min(image) #求得InImg中的最小值
-    image = np.round((ymax-ymin)*(image-xmin)/(xmax-xmin) + ymin)
-    
-    return image
-
-
-#def splitImage(img, label, savePath, spacing, origin, dire):
-#    """Split images using random walk results"""
-#    
-#    subImg = np.multiply(img, label)
-#    
-#    niisave(subImg, origin, spacing, dire, path = savePath)
-#    
-#    return subImg
-def splitImage(img, label, savePath, spacing, origin, dire):
-    """Split images using random walk results"""
-    
-    subImg = np.multiply(img, label)
-    
-    niisave(subImg, origin, spacing, dire, path = savePath)
-#    niisave(subImg, origin, spacing, path = savePath)
-    
-    return subImg
+import heapq
 
 
 def ant2mat2D(afftransform, center):
@@ -132,7 +95,7 @@ def denoiseLabels(img, ifmorphology='False'):
             erosion_subLabel = skimage.morphology.erosion(subMask, kernel)
         #    kernel = skimage.morphology.disk(18)
 #            kernel = skimage.morphology.disk(8)
-            kernel = skimage.morphology.disk(6) # first postprocessing
+            kernel = skimage.morphology.disk(2) # first postprocessing
 #            kernel = skimage.morphology.disk(3) # second postprocessing
             dilation_subLabel = skimage.morphology.dilation(erosion_subLabel, kernel)
             subMask = dilation_subLabel
@@ -148,59 +111,43 @@ def denoiseLabels(img, ifmorphology='False'):
     return subMask, maxContour
 
 
-#def denoiseLabels3D(img, ifmorphology='False'):
-#    """Post processing for random walk segmentation"""
-#    seg = img.copy()
-#    kernel = skimage.morphology.ball(1) #cube
-#    erosion_Label = skimage.morphology.erosion(seg, kernel)
-#    maxContour = seg - erosion_Label # surface
-#    subMask = scipy.ndimage.binary_fill_holes(maxContour.astype(np.float64)).astype('int8') # surface fill
-#
-#    if ifmorphology == 'True':
-#        kernel = skimage.morphology.cube(9) #cube
-#        erosion_subLabel = skimage.morphology.erosion(subMask, kernel)
-#        kernel = skimage.morphology.cube(2) #cube
-#        dilation_subLabel = skimage.morphology.dilation(erosion_subLabel, kernel)
-#        subMask = dilation_subLabel
-#    elif ifmorphology == 'expand':
-#        kernel = skimage.morphology.cube(2) #cube
-#        erosion_subLabel = skimage.morphology.dilation(subMask, kernel)
-#        kernel = skimage.morphology.cube(2) #cube
-#        dilation_subLabel = skimage.morphology.erosion(erosion_subLabel, kernel)
-#        subMask = dilation_subLabel
-#            
-#    return subMask, maxContour
-
-
 def denoiseLabels3D(img, ifmorphology='False'):
-    
-    imgSitk = sitk.GetImageFromArray(img)
-    imgSitk = sitk.Cast(imgSitk, sitk.sitkInt8)
-    
-    subMaskSitk = sitk.ConnectedComponent(imgSitk, True)
-    subMask = sitk.GetArrayFromImage(subMaskSitk)
+
+    labels = skimage.measure.label(img, background=0)
+    properties = skimage.measure.regionprops(labels)
+    areaList = []
+    for i in range(len(properties)):
+        areaList.append(properties[i].area)
+    max_num_index_list = map(areaList.index, heapq.nlargest(1, areaList)) # find index of the largest value in areaList
+    max_num_index = list(max_num_index_list)[0]
+    largestComponent = np.zeros_like(img)
+    largestComponent[labels == properties[max_num_index].label] = 1
+#    maxContour = skimage.measure.marching_cubes_classic(largestComponent)
+    subMaskSitk = sitk.GetImageFromArray(largestComponent)
+    subMaskSitk = sitk.Cast(subMaskSitk, sitk.sitkInt8)
     maxContourSitk = sitk.BinaryContour(subMaskSitk)
     maxContour = sitk.GetArrayFromImage(maxContourSitk)
-    #boundary = sitk.BinaryGrindPeak( boundary )
+#    boundary = sitk.BinaryGrindPeak( maxContourSitk )
     
     #contour = sitk.Cast(sitk.CannyEdgeDetection(test),sitk.sitkInt8)
     #contour=sitk.BinaryGrindPeak(contour)
 #    filledImage = sitk.BinaryFillhole(boundary)
+#    mask = sitk.GetArrayFromImage(filledImage)
     
     if ifmorphology == 'True':
-        kernel = skimage.morphology.cube(9) #cube
-        erosion_subLabel = skimage.morphology.erosion(subMask, kernel)
+        kernel = skimage.morphology.cube(14) #cube
+        erosion_subLabel = skimage.morphology.erosion(largestComponent, kernel)
         kernel = skimage.morphology.cube(2) #cube
         dilation_subLabel = skimage.morphology.dilation(erosion_subLabel, kernel)
-        subMask = dilation_subLabel
+        largestComponent = dilation_subLabel
     elif ifmorphology == 'expand':
         kernel = skimage.morphology.cube(2) #cube
-        erosion_subLabel = skimage.morphology.dilation(subMask, kernel)
+        erosion_subLabel = skimage.morphology.dilation(largestComponent, kernel)
         kernel = skimage.morphology.cube(2) #cube
         dilation_subLabel = skimage.morphology.erosion(erosion_subLabel, kernel)
-        subMask = dilation_subLabel
+        largestComponent = dilation_subLabel
     
-    return subMask, maxContour
+    return largestComponent, maxContour
 
 
 #from scipy.spatial.distance import cdist
