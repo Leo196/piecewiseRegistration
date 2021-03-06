@@ -7,4 +7,4 @@ labelProcessing.py: postprocessing\
 affineWarp.py: affine, warp\
 fieldLaplace.py: field blending based on Laplace equation\
 fieldGaussian.py: field blending based on Gaussian filter\
-visiualization.py: figures show, figures save\
+visiualization.py: figures show, figures save
